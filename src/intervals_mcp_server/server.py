@@ -39,7 +39,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
-from typing import Any
+from typing import Any, Dict, List, Optional, Union, cast
 import json
 
 import httpx  # pylint: disable=import-error
@@ -54,7 +54,7 @@ from intervals_mcp_server.utils.formatting import (
     format_wellness_entry,
 )
 
-from intervals_mcp_server.utils.types import WorkoutDoc
+from intervals_mcp_server.utils.types import WorkoutDoc, WorkoutType
 
 # Try to load environment variables from .env file if it exists
 try:
@@ -95,7 +95,9 @@ async def lifespan(_app: FastMCP):
 mcp = FastMCP("intervals-icu", lifespan=lifespan)
 
 # Constants
-INTERVALS_API_BASE_URL = os.getenv("INTERVALS_API_BASE_URL", "https://intervals.icu/api/v1")
+INTERVALS_API_BASE_URL = os.getenv(
+    "INTERVALS_API_BASE_URL", "https://intervals.icu/api/v1"
+)
 API_KEY = os.getenv("API_KEY", "")  # Provide default empty string
 ATHLETE_ID = os.getenv("ATHLETE_ID", "")  # Default athlete ID from .env
 USER_AGENT = "intervalsicu-mcp-server/1.0"
@@ -232,7 +234,9 @@ def _parse_activities_from_result(result: Any) -> list[dict[str, Any]]:
                 activities = [item for item in value if isinstance(item, dict)]
                 break
         # If no list was found but the dict has typical activity fields, treat it as a single activity
-        if not activities and any(key in result for key in ["name", "startTime", "distance"]):
+        if not activities and any(
+            key in result for key in ["name", "startTime", "distance"]
+        ):
             activities = [result]
 
     return activities
@@ -285,9 +289,7 @@ def _format_activities_response(
     """Format the activities response based on the results."""
     if not activities:
         if include_unnamed:
-            return (
-                f"No valid activities found for athlete {athlete_id} in the specified date range."
-            )
+            return f"No valid activities found for athlete {athlete_id} in the specified date range."
         return f"No named activities found for athlete {athlete_id} in the specified date range. Try with include_unnamed=True to see all activities."
 
     # Format the output
@@ -380,7 +382,9 @@ async def get_activity_details(activity_id: str, api_key: str | None = None) -> 
         api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
     """
     # Call the Intervals.icu API
-    result = await make_intervals_request(url=f"/activity/{activity_id}", api_key=api_key)
+    result = await make_intervals_request(
+        url=f"/activity/{activity_id}", api_key=api_key
+    )
 
     if isinstance(result, dict) and "error" in result:
         error_message = result.get("message", "Unknown error")
@@ -403,11 +407,15 @@ async def get_activity_details(activity_id: str, api_key: str | None = None) -> 
         zones = activity_data["zones"]
         detailed_view += "\nPower Zones:\n"
         for zone in zones.get("power", []):
-            detailed_view += f"Zone {zone.get('number')}: {zone.get('secondsInZone')} seconds\n"
+            detailed_view += (
+                f"Zone {zone.get('number')}: {zone.get('secondsInZone')} seconds\n"
+            )
 
         detailed_view += "\nHeart Rate Zones:\n"
         for zone in zones.get("hr", []):
-            detailed_view += f"Zone {zone.get('number')}: {zone.get('secondsInZone')} seconds\n"
+            detailed_view += (
+                f"Zone {zone.get('number')}: {zone.get('secondsInZone')} seconds\n"
+            )
 
     return detailed_view
 
@@ -424,7 +432,9 @@ async def get_activity_intervals(activity_id: str, api_key: str | None = None) -
         api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
     """
     # Call the Intervals.icu API
-    result = await make_intervals_request(url=f"/activity/{activity_id}/intervals", api_key=api_key)
+    result = await make_intervals_request(
+        url=f"/activity/{activity_id}/intervals", api_key=api_key
+    )
 
     if isinstance(result, dict) and "error" in result:
         error_message = result.get("message", "Unknown error")
@@ -576,9 +586,7 @@ async def get_wellness_data(
 
     # Format the response
     if not result:
-        return (
-            f"No wellness data found for athlete {athlete_id_to_use} in the specified date range."
-        )
+        return f"No wellness data found for athlete {athlete_id_to_use} in the specified date range."
 
     wellness_summary = "Wellness Data:\n\n"
 
@@ -597,7 +605,7 @@ async def get_wellness_data(
     return wellness_summary
 
 
-def _resolve_workout_type(name: str | None, workout_type: str | None) -> str:
+def _resolve_workout_type(name: Optional[str], workout_type: Optional[str]) -> str:
     """Determine the workout type based on the name and provided value."""
     if workout_type:
         return workout_type
@@ -633,7 +641,9 @@ async def delete_event(
     if not event_id:
         return "Error: No event ID provided."
     result = await make_intervals_request(
-        url=f"/athlete/{athlete_id_to_use}/events/{event_id}", api_key=api_key, method="DELETE"
+        url=f"/athlete/{athlete_id_to_use}/events/{event_id}",
+        api_key=api_key,
+        method="DELETE",
     )
     if isinstance(result, dict) and "error" in result:
         return f"Error deleting event: {result.get('message')}"
@@ -668,42 +678,44 @@ async def delete_events_by_date_range(
     failed_events = []
     for event in events:
         result = await make_intervals_request(
-            url=f"/athlete/{athlete_id_to_use}/events/{event.get('id')}", api_key=api_key, method="DELETE"
+            url=f"/athlete/{athlete_id_to_use}/events/{event.get('id')}",
+            api_key=api_key,
+            method="DELETE",
         )
         if isinstance(result, dict) and "error" in result:
-            failed_events.append(event.get('id'))
-    return f"Deleted {len(events) - len(failed_events)} events. Failed to delete {len(failed_events)} events: {failed_events}" 
+            failed_events.append(event.get("id"))
+    return f"Deleted {len(events) - len(failed_events)} events. Failed to delete {len(failed_events)} events: {failed_events}"
 
 
 @mcp.tool()
 async def add_or_update_event(
-    workout_type: str,
-    name: str,
-    athlete_id: str | None = None,
-    api_key: str | None = None,
-    event_id: str | None = None,
-    start_date: str | None = None,
-    workout_doc: WorkoutDoc | None = None,
-    moving_time: int | None = None,
-    distance: int | None = None,
+    workout_doc: WorkoutDoc,
+    athlete_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+    event_id: Optional[str] = None,
 ) -> str:
-    """Post event for an athlete to Intervals.icu this follows the event api from intervals.icu
-    If event_id is provided, the event will be updated instead of created.
+    """Create or update an event for an athlete in Intervals.icu using a WorkoutDoc.
+    
+    This function posts or updates an event following the Intervals.icu event API.
+    All workout information is contained in the WorkoutDoc parameter, including the type,
+    name, description, steps, and other metadata.
 
     Args:
-        athlete_id: The Intervals.icu athlete ID (optional, will use ATHLETE_ID from .env if not provided)
-        api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
-        event_id: The Intervals.icu event ID (optional, will use event_id from .env if not provided)
-        start_date: Start date in YYYY-MM-DD format (optional, defaults to today)
-        name: Name of the activity
-        workout_doc: steps as a list of Step objects (optional, but necessary to define workout steps)
-        workout_type: Workout type (e.g. Ride, Run, Swim, Walk, Row)
-        moving_time: Total expected moving time of the workout in seconds (optional)
-        distance: Total expected distance of the workout in meters (optional)
-    
+        workout_doc: Complete workout document with all workout details
+        athlete_id: The Intervals.icu athlete ID (optional, uses ATHLETE_ID from .env if not provided)
+        api_key: The Intervals.icu API key (optional, uses API_KEY from .env if not provided)
+        event_id: The Intervals.icu event ID (optional, creates a new event if not provided)
+
+    Returns:
+        A string message indicating the result of the operation
+
     Example:
         "workout_doc": {
+            "name": "VO2 Max Intervals",
+            "workout_type": "ride",
             "description": "High-intensity workout for increasing VO2 max",
+            "moving_time": 3600,
+            "distance": 25000,
             "steps": [
                 {"power": {"value": "80", "units": "%ftp"}, "duration": "900", "warmup": true},
                 {"reps": 2, "text": "High-intensity intervals", "steps": [
@@ -714,7 +726,7 @@ async def add_or_update_event(
                 {"text": ""}, # Add comments or blank lines for readability
             ]
         }
-    
+
     Step properties:
         distance: Distance of step in meters
             {"distance": "5000"}
@@ -755,25 +767,42 @@ async def add_or_update_event(
     if not athlete_id_to_use:
         message = "Error: No athlete ID provided and no default ATHLETE_ID found in environment variables."
     else:
-        if not start_date:
-            start_date = datetime.now().strftime("%Y-%m-%d")
         try:
-            resolved_workout_type = _resolve_workout_type(name, workout_type)
+            # Validate the workout document has required fields
+            if not workout_doc.name:
+                raise ValueError("Workout name is required")
+            
+            # Get the start date, defaulting to today if not provided
+            start_date = workout_doc.start_date if workout_doc.start_date else datetime.now().strftime("%Y-%m-%d")
+            
+            # Resolve workout type from the workout_doc
+            workout_type_str = None
+            if workout_doc.workout_type:
+                workout_type_str = workout_doc.workout_type.value if hasattr(workout_doc.workout_type, 'value') else str(workout_doc.workout_type)
+            
+            resolved_workout_type = _resolve_workout_type(workout_doc.name, workout_type_str)
+            
+            # Prepare data for the API request
             data = {
                 "start_date_local": start_date + "T00:00:00",
-                "category": "WORKOUT",
-                "name": name,
-                "description": str(workout_doc) if workout_doc else None,
+                "category": "WORKOUT", # Always set to WORKOUT for the Intervals.icu API
+                "name": workout_doc.name,
+                "description": str(workout_doc) if workout_doc.steps else workout_doc.description,
                 "type": resolved_workout_type,
-                "moving_time": moving_time,
-                "distance": distance,
+                "moving_time": workout_doc.moving_time,
+                "distance": workout_doc.distance,
             }
+            
+            # Make the API request
             result = await make_intervals_request(
-                url=f"/athlete/{athlete_id_to_use}/events" +("/"+event_id if event_id else ""),
+                url=f"/athlete/{athlete_id_to_use}/events"
+                + ("/" + event_id if event_id else ""),
                 api_key=api_key,
                 data=data,
                 method="PUT" if event_id else "POST",
             )
+            
+            # Process the result
             action = "updated" if event_id else "created"
             if isinstance(result, dict) and "error" in result:
                 error_message = result.get("message", "Unknown error")
