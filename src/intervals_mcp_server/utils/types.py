@@ -37,7 +37,7 @@ class HrTarget(Enum):
     THREE_SECOND = "3s"
     TEN_SECOND = "10s"
     THIRTY_SECOND = "30s"
-    
+
 
 class Intensity(Enum):
     ACTIVE = "active"
@@ -85,7 +85,7 @@ class Value:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert Value instance to dictionary for JSON serialization."""
-        data = {}
+        data: Dict[str, Any] = {}
         if self.value is not None:
             data['value'] = self.value
         if self.start is not None:
@@ -101,7 +101,7 @@ class Value:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Value':
         """Create Value instance from dictionary."""
-        kwargs = {}
+        kwargs: Dict[str, Any] = {}
         if 'value' in data:
             kwargs['value'] = data['value']
         if 'start' in data:
@@ -192,7 +192,7 @@ class Step:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert Step instance to dictionary for JSON serialization."""
-        data = {}
+        data: Dict[str, Any] = {}
         if self.text is not None:
             data['text'] = self.text
         if self.text_locale is not None:
@@ -242,7 +242,7 @@ class Step:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Step':
         """Create Step instance from dictionary."""
-        kwargs = {}
+        kwargs: Dict[str, Any] = {}
         if 'text' in data:
             kwargs['text'] = data['text']
         if 'text_locale' in data:
@@ -322,7 +322,7 @@ class Step:
             return f"{float_to_str(self.distance)}mtr"
         return f"{float_to_str(self.distance / 1000)}km"
 
-    def __str__(self, nested: bool = False) -> str:
+    def to_string(self, nested: bool = False) -> str:
         val = ""
         if self.reps is not None:
             if nested:
@@ -361,14 +361,17 @@ class Step:
                 val += f"{self.cadence} "
         if self.text is not None:
             val += f"{self.text} "
-        
+
         if self.reps is not None and self.steps is not None:
             for step in self.steps:
-                val += "\n" + step.__str__(nested=True)
+                val += "\n" + step.to_string(nested=True)
             val += "\n"
         elif not nested and (self.warmup or self.cooldown):
             val += "\n"
         return val
+
+    def __str__(self) -> str:  # pragma: no cover - simple wrapper
+        return self.to_string(False)
 
 
 @dataclass
@@ -415,7 +418,7 @@ class WorkoutDoc:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert WorkoutDoc instance to dictionary for JSON serialization."""
-        data = {}
+        data: Dict[str, Any] = {}
         if self.description is not None:
             data['description'] = self.description
         if self.description_locale is not None:
@@ -451,7 +454,7 @@ class WorkoutDoc:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'WorkoutDoc':
         """Create WorkoutDoc instance from dictionary."""
-        kwargs = {}
+        kwargs: Dict[str, Any] = {}
         if 'description' in data:
             kwargs['description'] = data['description']
         if 'description_locale' in data:
@@ -499,5 +502,5 @@ class WorkoutDoc:
             val += f"{self.description}\n"
         if self.steps is not None:
             for step in self.steps:
-                val += step.__str__() + "\n"
+                val += step.to_string() + "\n"
         return val
