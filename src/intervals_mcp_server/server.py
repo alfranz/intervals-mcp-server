@@ -597,15 +597,9 @@ async def get_wellness_data(
     return wellness_summary
 
 
-# ----- MCP Resources & Prompts ----- #
+# ----- MCP Prompts ----- #
 
 
-@mcp.resource(
-    "resource://workout-description-format",
-    name="Workout Description Format",
-    description="Plain-text DSL for Intervals.icu workout descriptions (Ride/Run)",
-    mime_type="text/markdown",
-)
 def workout_description_format() -> str:
     """Return the canonical workout description format and examples.
 
@@ -659,12 +653,6 @@ def workout_description_format() -> str:
     )
 
 
-@mcp.resource(
-    "resource://workout-description-format-run",
-    name="Workout Description Format (Run)",
-    description="Plain-text DSL for Run workouts using threshold pace (min/km)",
-    mime_type="text/markdown",
-)
 def workout_description_format_run() -> str:
     """Run-specific workout description format and example."""
     return (
@@ -691,7 +679,7 @@ def workout_description_format_run() -> str:
     )
 
 
-@mcp.prompt(name="compose_workout", description="Compose a workout in the exact plain-text format.")
+@mcp.prompt(name="compose_workout", description="Compose a workout in the exact plain-text format (DSL embedded in prompt).")
 def compose_workout_prompt(
     sport: str = "Ride",
     goal: str | None = None,
@@ -709,19 +697,86 @@ def compose_workout_prompt(
         + (f"Constraints: {constraints}." if constraints else "")
     ).strip()
 
-    contents: list[dict[str, Any]] = [
-        {"type": "text", "text": instructions}
+    # Embed the DSL directly so the model learns it first
+    dsl_text = workout_description_format()
+    contents: list[dict[str, Any]] = []
+    contents.append({"type": "text", "text": dsl_text})
+    if sport.lower() == "run":
+        contents.append({"type": "text", "text": workout_description_format_run()})
+    contents.append({"type": "text", "text": instructions})
+
+    return [
+        {
+            "role": "user",
+            "content": contents,
+        }
     ]
 
-    # Attach the most relevant resource by sport
-    if sport.lower() == "run":
-        contents.append(
-            {"type": "resource", "resource": {"uri": "resource://workout-description-format-run"}}
-        )
-    else:
-        contents.append(
-            {"type": "resource", "resource": {"uri": "resource://workout-description-format"}}
-        )
+
+@mcp.prompt(
+    name="create_event",
+    description=(
+        "Create or update an Intervals.icu event by calling the add_or_update_event tool. "
+        "This prompt embeds the workout DSL so the model learns it before creating the event."
+    ),
+)
+def create_event_prompt(
+    request: str,
+    default_sport: str = "Ride",
+    default_date: str | None = None,
+    event_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Prompt that instructs the model to call add_or_update_event to create/update an event.
+
+    Guidance for the model:
+    - Extract: start_date (YYYY-MM-DD), name, workout_type, description.
+    - If the sport is Ride or Run and a structured workout is described, write the description using the
+      attached Workout Description DSL exactly (no code fences, no extra commentary).
+    - If information is missing (e.g., date or sport), ask one concise clarifying question before calling the tool.
+    - If an event_id is provided, update the existing event (the tool uses PUT when event_id is set).
+    - Prefer the following mapping unless the user specifies otherwise: Ride for cycling, Run for running,
+      Swim, Walk, Row; otherwise default to the provided default_sport.
+    - Do not invent data such as distance or moving_time unless explicitly stated or clearly implied.
+    - When ready, call the tool add_or_update_event with the extracted arguments.
+    """
+
+    # Build instruction text for the LLM
+    header = (
+        "Study the Workout Description DSL below carefully first.\n"
+        "Then create or update an Intervals.icu event by calling add_or_update_event.\n\n"
+        "Rules:\n"
+        "- Extract a clear `name`, `start_date` (YYYY-MM-DD), and `workout_type`.\n"
+        "- For Ride/Run, write the `description` using the DSL exactly (no code fences, no extra commentary).\n"
+        "- If key info is missing, ask one concise clarifying question before calling the tool.\n"
+        "- If `event_id` is specified, update instead of create.\n"
+        "- Do not invent distance or moving_time unless specified or clearly implied.\n"
+        "- Make exactly one tool call when you have sufficient information.\n\n"
+    )
+
+    # Provide helpful defaults if given
+    defaults_note = []
+    if default_date:
+        defaults_note.append(f"Default date: {default_date}.")
+    if default_sport:
+        defaults_note.append(f"Default sport: {default_sport}.")
+    if event_id:
+        defaults_note.append(f"Target event_id (update): {event_id}.")
+
+    defaults_text = (" " + " ".join(defaults_note)).strip()
+
+    instructions = (
+        header
+        + (f"Context:{' ' + defaults_text if defaults_text else ''}\n\n" if defaults_text else "")
+        + "User request (extract details from this):\n"
+        + request.strip()
+    )
+
+    # Embed DSL text before the instructions so the model "learns" it
+    contents: list[dict[str, Any]] = []
+    contents.append({"type": "text", "text": workout_description_format()})
+    if default_sport.lower() == "run":
+        contents.append({"type": "text", "text": workout_description_format_run()})
+    contents.append({"type": "text", "text": instructions})
 
     return [
         {
