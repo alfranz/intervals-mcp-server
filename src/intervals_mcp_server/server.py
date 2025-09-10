@@ -41,6 +41,7 @@ from datetime import datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 import json
+from typing import Literal
 
 import httpx  # pylint: disable=import-error
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error
@@ -613,11 +614,12 @@ def workout_description_format() -> str:
         "- Steps are bulleted with `- ` at the start of the line.\n"
         "- Durations use h/m/s (e.g., `1h`, `20m`, `45s`, `10m0s`).\n"
         "- Repeats: a line like `5x` applies to the following bulleted steps.\n"
-        "- You may include cues like `Press lap ...`.\n\n"
+        "- You may include cues like `Press lap ...` for variable time intervals (warmup, cooldown, etc).\n\n"
         "Ride (Bike) Conventions:\n"
         "- Percentages are % of FTP (e.g., `60-70%`, `95%`).\n"
         "- Absolute power in watts uses `W` (e.g., `150W`, `150-180W`).\n"
         "- Ramps: `ramp 60-70%` (or watts, e.g., `ramp 150-250W`).\n\n"
+        "The example below is just a sample. Use the best of your knowledge to structure the contents of the workout.\n"
         "Ride Example:\n\n"
         "Warm Up\n\n"
         "- 5m ramp 60-70%\n"
@@ -630,26 +632,6 @@ def workout_description_format() -> str:
         "- 2m 100-105%\n\n"
         "Cooldown\n\n"
         "- Press lap 10m 100-120W\n\n"
-        "Run Conventions:\n"
-        "- Percentages are % of threshold pace (min/km).\n"
-        "- Use the label `Pace` to indicate pace-based targets (e.g., `100% Pace`, `80-90% Pace`).\n"
-        "- Durations may include seconds explicitly (e.g., `10m0s`, `90s`).\n"
-        "- Distances can be specified (e.g., `0.1km`).\n"
-        "- Rest examples can use `freeride intensity=rest`.\n\n"
-        "Run Example:\n\n"
-        "Warmup\n"
-        "- 10m ramp 80-90% Pace\n\n"
-        "Main\n\n"
-        "- 10m0s 100% Pace\n"
-        "- 10m0s 80-90% Pace\n\n"
-        "5x\n"
-        "- 3m0s 110-115% Pace\n"
-        "- Rest 0.1km freeride intensity=rest\n\n"
-        "3x\n"
-        "- 1m0s 120-125% Pace\n"
-        "- Rest 90s freeride intensity=rest\n\n"
-        "Cooldown\n\n"
-        "- 10m 70-90% Pace\n"
     )
 
 
@@ -679,111 +661,12 @@ def workout_description_format_run() -> str:
     )
 
 
-@mcp.prompt(name="compose_workout", description="Compose a workout in the exact plain-text format (DSL embedded in prompt).")
-def compose_workout_prompt(
-    sport: str = "Ride",
-    goal: str | None = None,
-    constraints: str | None = None,
-) -> list[dict[str, Any]]:
-    """Prompt that instructs the model to output ONLY the workout description.
-
-    The resource with the DSL spec is attached to maximize adherence.
+@mcp.tool()
+def get_workout_description_examples() -> str:
+    """Get the workout description examples, call this function BEFORE creating a event in intervals.icu
+    Run workouts have a slightly different format than Ride workouts.
     """
-    instructions = (
-        "Write ONLY the workout description in the exact format. "
-        "No explanations, no code fences, no extra text.\n\n"
-        f"Sport: {sport}. "
-        + (f"Goal: {goal}. " if goal else "")
-        + (f"Constraints: {constraints}." if constraints else "")
-    ).strip()
-
-    # Embed the DSL directly so the model learns it first
-    dsl_text = workout_description_format()
-    contents: list[dict[str, Any]] = []
-    contents.append({"type": "text", "text": dsl_text})
-    if sport.lower() == "run":
-        contents.append({"type": "text", "text": workout_description_format_run()})
-    contents.append({"type": "text", "text": instructions})
-
-    return [
-        {
-            "role": "user",
-            "content": contents,
-        }
-    ]
-
-
-@mcp.prompt(
-    name="create_event",
-    description=(
-        "Create or update an Intervals.icu event by calling the add_or_update_event tool. "
-        "This prompt embeds the workout DSL so the model learns it before creating the event."
-    ),
-)
-def create_event_prompt(
-    request: str,
-    default_sport: str = "Ride",
-    default_date: str | None = None,
-    event_id: str | None = None,
-) -> list[dict[str, Any]]:
-    """Prompt that instructs the model to call add_or_update_event to create/update an event.
-
-    Guidance for the model:
-    - Extract: start_date (YYYY-MM-DD), name, workout_type, description.
-    - If the sport is Ride or Run and a structured workout is described, write the description using the
-      attached Workout Description DSL exactly (no code fences, no extra commentary).
-    - If information is missing (e.g., date or sport), ask one concise clarifying question before calling the tool.
-    - If an event_id is provided, update the existing event (the tool uses PUT when event_id is set).
-    - Prefer the following mapping unless the user specifies otherwise: Ride for cycling, Run for running,
-      Swim, Walk, Row; otherwise default to the provided default_sport.
-    - Do not invent data such as distance or moving_time unless explicitly stated or clearly implied.
-    - When ready, call the tool add_or_update_event with the extracted arguments.
-    """
-
-    # Build instruction text for the LLM
-    header = (
-        "Study the Workout Description DSL below carefully first.\n"
-        "Then create or update an Intervals.icu event by calling add_or_update_event.\n\n"
-        "Rules:\n"
-        "- Extract a clear `name`, `start_date` (YYYY-MM-DD), and `workout_type`.\n"
-        "- For Ride/Run, write the `description` using the DSL exactly (no code fences, no extra commentary).\n"
-        "- If key info is missing, ask one concise clarifying question before calling the tool.\n"
-        "- If `event_id` is specified, update instead of create.\n"
-        "- Do not invent distance or moving_time unless specified or clearly implied.\n"
-        "- Make exactly one tool call when you have sufficient information.\n\n"
-    )
-
-    # Provide helpful defaults if given
-    defaults_note = []
-    if default_date:
-        defaults_note.append(f"Default date: {default_date}.")
-    if default_sport:
-        defaults_note.append(f"Default sport: {default_sport}.")
-    if event_id:
-        defaults_note.append(f"Target event_id (update): {event_id}.")
-
-    defaults_text = (" " + " ".join(defaults_note)).strip()
-
-    instructions = (
-        header
-        + (f"Context:{' ' + defaults_text if defaults_text else ''}\n\n" if defaults_text else "")
-        + "User request (extract details from this):\n"
-        + request.strip()
-    )
-
-    # Embed DSL text before the instructions so the model "learns" it
-    contents: list[dict[str, Any]] = []
-    contents.append({"type": "text", "text": workout_description_format()})
-    if default_sport.lower() == "run":
-        contents.append({"type": "text", "text": workout_description_format_run()})
-    contents.append({"type": "text", "text": instructions})
-
-    return [
-        {
-            "role": "user",
-            "content": contents,
-        }
-    ]
+    return workout_description_format() + "\n\n ----\n\n" + workout_description_format_run()
 
 
 def _resolve_workout_type(name: str | None, workout_type: str | None) -> str:
@@ -822,7 +705,9 @@ async def delete_event(
     if not event_id:
         return "Error: No event ID provided."
     result = await make_intervals_request(
-        url=f"/athlete/{athlete_id_to_use}/events/{event_id}", api_key=api_key, method="DELETE"
+        url=f"/athlete/{athlete_id_to_use}/events/{event_id}",
+        api_key=api_key,
+        method="DELETE",
     )
     if isinstance(result, dict) and "error" in result:
         return f"Error deleting event: {result.get('message')}"
@@ -857,16 +742,18 @@ async def delete_events_by_date_range(
     failed_events = []
     for event in events:
         result = await make_intervals_request(
-            url=f"/athlete/{athlete_id_to_use}/events/{event.get('id')}", api_key=api_key, method="DELETE"
+            url=f"/athlete/{athlete_id_to_use}/events/{event.get('id')}",
+            api_key=api_key,
+            method="DELETE",
         )
         if isinstance(result, dict) and "error" in result:
-            failed_events.append(event.get('id'))
+            failed_events.append(event.get("id"))
     return f"Deleted {len(events) - len(failed_events)} events. Failed to delete {len(failed_events)} events: {failed_events}"
 
 
 @mcp.tool()
 async def add_or_update_event(
-    workout_type: str,
+    workout_type: Literal["Ride", "Run", "Swim", "Walk", "Row"],
     name: str,
     athlete_id: str | None = None,
     api_key: str | None = None,
@@ -878,6 +765,7 @@ async def add_or_update_event(
 ) -> str:
     """Post event for an athlete to Intervals.icu this follows the event api from intervals.icu
     If event_id is provided, the event will be updated instead of created.
+    Call get_workout_description_examples tool first to get the correct format for the description - this is dependent on the workout_type.
 
     Args:
         athlete_id: The Intervals.icu athlete ID (optional, will use ATHLETE_ID from .env if not provided)
@@ -914,7 +802,7 @@ async def add_or_update_event(
                 "distance": distance,
             }
             result = await make_intervals_request(
-                url=f"/athlete/{athlete_id_to_use}/events" +("/"+event_id if event_id else ""),
+                url=f"/athlete/{athlete_id_to_use}/events" + ("/" + event_id if event_id else ""),
                 api_key=api_key,
                 data=data,
                 method="PUT" if event_id else "POST",

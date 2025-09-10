@@ -16,12 +16,7 @@ import asyncio
 import os
 import pathlib
 import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("ATHLETE_ID", "i1")
-
-from intervals_mcp_server.server import (  # pylint: disable=wrong-import-position
+from intervals_mcp_server.server import (
     get_activities,
     get_activity_details,
     get_events,
@@ -30,7 +25,12 @@ from intervals_mcp_server.server import (  # pylint: disable=wrong-import-positi
     get_activity_intervals,
     add_or_update_event,
 )
-from tests.sample_data import INTERVALS_DATA  # pylint: disable=wrong-import-position
+from tests.sample_data import INTERVALS_DATA
+
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
+os.environ.setdefault("API_KEY", "test")
+os.environ.setdefault("ATHLETE_ID", "i1")
 
 
 def test_get_activities(monkeypatch):
@@ -175,7 +175,7 @@ def test_add_or_update_event(monkeypatch):
             start_date="2024-01-15",
             name="Test Workout",
             workout_type="Ride",
-            description="Endurance ride on rolling terrain"
+            description="Endurance ride on rolling terrain",
         )
     )
     assert "Successfully created event:" in result
