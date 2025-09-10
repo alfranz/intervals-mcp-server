@@ -108,6 +108,7 @@ TSS: {workout.get("tss", "N/A")}
 Intervals: {len(workout.get("intervals", []))}
 """
 
+
 def format_wellness_entry(entries: dict[str, Any]) -> str:
     lines = ["Wellness Data:"]
     lines.append(f"Date: {entries.get('id', 'N/A')}")
@@ -135,9 +136,7 @@ def format_wellness_entry(entries: dict[str, Any]) -> str:
         for sport in entries.get("sportInfo", []):
             if isinstance(sport, dict):
                 if sport.get("eftp") is not None:
-                    sport_info_list.append(
-                        f"- {sport.get('type')}: eFTP = {sport['eftp']}"
-                    )
+                    sport_info_list.append(f"- {sport.get('type')}: eFTP = {sport['eftp']}")
     if sport_info_list:
         lines.append("Sport-Specific Info:")
         lines.extend(sport_info_list)
@@ -165,7 +164,9 @@ def format_wellness_entry(entries: dict[str, Any]) -> str:
         if entries.get(k) is not None:
             value = entries[k]
             if k == "systolic" and entries.get("diastolic") is not None:
-                vital_signs.append(f"-Blood Pressure: {entries['systolic']}/{entries['diastolic']} mmHg")
+                vital_signs.append(
+                    f"-Blood Pressure: {entries['systolic']}/{entries['diastolic']} mmHg"
+                )
             elif k not in ("systolic", "diastolic"):
                 vital_signs.append(f"- {label}: {value}{(' ' + unit) if unit else ''}")
     if vital_signs:
@@ -199,7 +200,9 @@ def format_wellness_entry(entries: dict[str, Any]) -> str:
     if entries.get("menstrualPhase") is not None:
         menstrual_lines.append(f"  Menstrual Phase: {str(entries['menstrualPhase']).capitalize()}")
     if entries.get("menstrualPhasePredicted") is not None:
-        menstrual_lines.append(f"  Predicted Phase: {str(entries['menstrualPhasePredicted']).capitalize()}")
+        menstrual_lines.append(
+            f"  Predicted Phase: {str(entries['menstrualPhasePredicted']).capitalize()}"
+        )
     if menstrual_lines:
         lines.append("Menstrual Tracking:")
         lines.extend(menstrual_lines)
