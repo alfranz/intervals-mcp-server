@@ -598,10 +598,7 @@ async def get_wellness_data(
     return wellness_summary
 
 
-# ----- MCP Prompts ----- #
-
-
-def workout_description_format() -> str:
+def workout_description_format_ride() -> str:
     """Return the canonical workout description format and examples.
 
     Clients can pin or attach this resource to guide LLM output.
@@ -666,7 +663,7 @@ def get_workout_description_examples() -> str:
     """Get the workout description examples, call this function BEFORE creating a event in intervals.icu
     Run workouts have a slightly different format than Ride workouts.
     """
-    return workout_description_format() + "\n\n ----\n\n" + workout_description_format_run()
+    return workout_description_format_ride() + "\n\n ----\n\n" + workout_description_format_run()
 
 
 def _resolve_workout_type(name: str | None, workout_type: str | None) -> str:
